@@ -50,14 +50,23 @@ def home():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, telegram_app.bot)
-    async def process():
-        await telegram_app.initialize()
-        await telegram_app.process_update(update)
-        await telegram_app.shutdown()
-    asyncio.run(process())
-    return "OK", 200
+    try:
+        data = request.get_json(force=True)
+        update = Update.de_json(data, telegram_app.bot)
+
+        # Usa el event loop actual sin cerrarlo
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(telegram_app.process_update(update))
+        else:
+            loop.run_until_complete(telegram_app.process_update(update))
+
+        return "OK", 200
+
+    except Exception as e:
+        print(f"[ERROR webhook] {e}")
+        return "ERROR", 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
