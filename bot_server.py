@@ -45,17 +45,9 @@ def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
 
-    # Asegurar que el loop esté disponible
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    # Ejecutar la tarea de forma segura dentro del loop de asyncio
+    asyncio.run(telegram_app.process_update(update))
 
-    loop.create_task(telegram_app.process_update(update))
     return "OK", 200
 
 # === Ejecutar servidor ===
