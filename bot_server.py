@@ -3,8 +3,8 @@ import sys
 import json
 import requests
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 # === Configuración general ===
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -15,7 +15,9 @@ if not TOKEN:
     sys.exit(1)
 
 app = Flask(__name__)
-bot = Bot(token=TOKEN)
+
+# === Inicializa la aplicación de Telegram (modo asyncio, v20+) ===
+telegram_app = Application.builder().token(TOKEN).build()
 
 # === Comandos ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -61,18 +63,17 @@ async def analyze_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error interno: {e}")
 
+# === Registrar handlers ===
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("help", help_command))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, analyze_message))
+
 # === Webhook ===
 @app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
+async def webhook():
     """Recibe las actualizaciones desde Telegram vía webhook."""
-    update = Update.de_json(request.get_json(force=True), bot)
-    app_instance = ApplicationBuilder().token(TOKEN).build()
-
-    app_instance.add_handler(CommandHandler("start", start))
-    app_instance.add_handler(CommandHandler("help", help_command))
-    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, analyze_message))
-
-    app_instance.update_queue.put_nowait(update)
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    await telegram_app.process_update(update)
     return "ok", 200
 
 @app.route("/", methods=["GET"])
