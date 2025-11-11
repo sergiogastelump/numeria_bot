@@ -1,92 +1,99 @@
-# bot_server.py
 import os
+import sys
+import json
 import requests
 from flask import Flask, request
-from dotenv import load_dotenv
 from telegram import Bot, Update
-from telegram.ext import (
-    Application,
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- Configuración ---
-load_dotenv()
+# --- Parche temporal para Python 3.13 (imghdr eliminado) ---
+import mimetypes, types
+def what(file):
+    """Emula imghdr.what() en Python 3.13+"""
+    mime_type, _ = mimetypes.guess_type(file)
+    if mime_type:
+        return mime_type.split("/")[-1]
+    return None
+imghdr = types.SimpleNamespace(what=what)
+sys.modules["imghdr"] = imghdr
+# ------------------------------------------------------------
+
+# === Configuración general ===
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-NUMERIA_API_URL = "https://numeria-render-ready.onrender.com/analyze"
+DATAMIND_URL = os.getenv("DATAMIND_URL", "https://numeria-render-ready.onrender.com/analyze")
+
+if not TOKEN:
+    print("⚠️ ERROR: No se encontró TELEGRAM_TOKEN en las variables de entorno.")
+    sys.exit(1)
 
 app = Flask(__name__)
 bot = Bot(token=TOKEN)
 
-
-# --- Comando /start ---
+# === Comandos ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 *Bienvenido a Numer IA Tipster (webhook)*\n\n"
-        "Envíame un mensaje con este formato:\n"
-        "`Nombre, FechaNacimiento(YYYY-MM-DD), Código`\n\n"
-        "Ejemplo:\n`Lionel Messi, 1987-06-24, MIAMI GOAL 10`",
+        "🤖 ¡Hola! Soy *Numer IA Bot*, tu asistente de análisis numerológico y simbólico.\n"
+        "Puedes escribirme un nombre o código de poder para recibir una interpretación personalizada.",
         parse_mode="Markdown"
     )
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "ℹ️ Comandos disponibles:\n"
+        "/start – Mensaje de bienvenida\n"
+        "/help – Ver esta ayuda\n"
+        "Simplemente escribe un texto, nombre o número para analizarlo."
+    )
 
-# --- Procesamiento de mensajes ---
-async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def analyze_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if not text:
+        await update.message.reply_text("⚠️ Por favor, envía un texto válido para analizar.")
+        return
+
     try:
-        parts = [p.strip() for p in text.split(",")]
-        if len(parts) < 3:
-            await update.message.reply_text("⚠️ Usa el formato correcto: Nombre, Fecha, Código")
-            return
-
-        name, birthdate, power_code = parts[0], parts[1], parts[2]
-        payload = {"name": name, "birthdate": birthdate, "power_code": power_code}
-        r = requests.post(NUMERIA_API_URL, json=payload, timeout=20)
-
-        if r.status_code == 200:
-            data = r.json()
-            summary = data.get("interpretation", {}).get("summary", "Sin interpretación.")
-            details = "\n".join(data.get("interpretation", {}).get("details", []))
+        payload = {"text": text}
+        response = requests.post(DATAMIND_URL, json=payload, timeout=20)
+        if response.status_code == 200:
+            data = response.json()
+            numerology = data.get("numerology", {})
+            gematria = data.get("gematria", {})
+            interp = data.get("interpretation", {}).get("summary", "Sin interpretación disponible.")
 
             msg = (
-                f"🔮 *Numer IA Tipster*\n\n"
-                f"📛 *Nombre:* {name}\n"
-                f"📅 *Fecha:* {birthdate}\n"
-                f"💬 *Código:* {power_code}\n\n"
-                f"🧠 *Resumen:* {summary}\n\n"
-                f"📖 *Detalles:*\n{details}"
+                f"🔢 *Análisis de:* {text}\n\n"
+                f"✨ *Numerología:* {numerology.get('by_name', {}).get('name_core', 'N/A')}\n"
+                f"🔠 *Gematría:* {gematria.get('gematria', 'N/A')}\n\n"
+                f"🧠 *Interpretación:* {interp}"
             )
             await update.message.reply_text(msg, parse_mode="Markdown")
         else:
-            await update.message.reply_text("❌ Error al contactar Numer IA.")
-
+            await update.message.reply_text("❌ Error al procesar el análisis con el servidor DataMind.")
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
+        await update.message.reply_text(f"⚠️ Error interno: {e}")
 
-
-# --- Construcción del Application (para webhook) ---
-application = ApplicationBuilder().token(TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, analyze))
-
-
-# --- Endpoint principal del webhook ---
+# === Webhook ===
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
+    """Recibe las actualizaciones desde Telegram vía webhook."""
     update = Update.de_json(request.get_json(force=True), bot)
-    application.update_queue.put_nowait(update)
+    app_instance = ApplicationBuilder().token(TOKEN).build()
+
+    app_instance.add_handler(CommandHandler("start", start))
+    app_instance.add_handler(CommandHandler("help", help_command))
+    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, analyze_message))
+
+    app_instance.update_queue.put_nowait(update)
     return "ok", 200
 
-
-# --- Verificación del servidor ---
 @app.route("/", methods=["GET"])
 def index():
-    return "Numer IA Bot online ✅", 200
+    return {
+        "status": "Numer IA Bot activo ✅",
+        "info": "Webhook en funcionamiento",
+        "service": "bot_server"
+    }, 200
 
-
-# --- Iniciar Flask ---
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
