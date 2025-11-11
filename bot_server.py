@@ -17,16 +17,17 @@ telegram_app = Application.builder().token(TOKEN).build()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[LOG] Mensaje recibido de @{update.effective_user.username}")
     await update.message.reply_text(
-        "🤖 ¡Hola! Soy *NumerIA*.\nEstoy lista para darte interpretaciones y predicciones místicas ✨",
+        "🔮 ¡Hola! Soy *NumerIA*, tu guía mística digital.\n"
+        "Puedo interpretar tus códigos y vibraciones numéricas para revelar energías ocultas ✨",
         parse_mode="Markdown"
     )
 
-# === Respuesta por defecto a cualquier mensaje ===
+# === Respuesta por defecto ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     print(f"[LOG] Mensaje: {user_text} de @{update.effective_user.username}")
     await update.message.reply_text(
-        f"🔮 Has dicho: *{user_text}*\nPronto interpretaré tus códigos y predicciones místicas...",
+        f"🌙 Has dicho: *{user_text}*\nDéjame sentir la vibración de tus palabras...",
         parse_mode="Markdown"
     )
 
@@ -45,8 +46,11 @@ def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
 
-    # Ejecutar la tarea de forma segura dentro del loop de asyncio
-    asyncio.run(telegram_app.process_update(update))
+    # Crear o recuperar el loop de eventos correctamente
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(telegram_app.process_update(update))
+    loop.close()
 
     return "OK", 200
 
