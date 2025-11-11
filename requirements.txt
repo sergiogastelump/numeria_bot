@@ -1,5 +1,5 @@
 Flask==3.0.3
 python-telegram-bot==20.8
-python-dotenv
-requests
-gunicorn
+python-dotenv==1.0.1
+gunicorn==23.0.0
+requests==2.32.3
