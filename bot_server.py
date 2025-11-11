@@ -4,40 +4,42 @@ import requests
 from flask import Flask, request
 from dotenv import load_dotenv
 from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
-# --- Configuración inicial ---
+# --- Configuración ---
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-NUMERIA_API_URL = "https://numeria-render-ready.onrender.com/analyze"  # IA principal
+NUMERIA_API_URL = "https://numeria-render-ready.onrender.com/analyze"
+
+app = Flask(__name__)
 bot = Bot(token=TOKEN)
 
-# --- Flask para el webhook ---
-app = Flask(__name__)
 
-# --- Dispatcher (maneja comandos y mensajes) ---
-from telegram.ext import Dispatcher
-
-dispatcher = Dispatcher(bot, None, workers=0)
-
-
-# --- Funciones del bot ---
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
+# --- Comando /start ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "🤖 *Bienvenido a Numer IA Tipster (webhook)*\n\n"
-        "Envíame un mensaje con este formato:\n\n"
+        "Envíame un mensaje con este formato:\n"
         "`Nombre, FechaNacimiento(YYYY-MM-DD), Código`\n\n"
         "Ejemplo:\n`Lionel Messi, 1987-06-24, MIAMI GOAL 10`",
         parse_mode="Markdown"
     )
 
 
-def analyze(update: Update, context: CallbackContext):
+# --- Procesamiento de mensajes ---
+async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     try:
         parts = [p.strip() for p in text.split(",")]
         if len(parts) < 3:
-            update.message.reply_text("⚠️ Usa el formato correcto: Nombre, Fecha, Código")
+            await update.message.reply_text("⚠️ Usa el formato correcto: Nombre, Fecha, Código")
             return
 
         name, birthdate, power_code = parts[0], parts[1], parts[2]
@@ -57,32 +59,34 @@ def analyze(update: Update, context: CallbackContext):
                 f"🧠 *Resumen:* {summary}\n\n"
                 f"📖 *Detalles:*\n{details}"
             )
-            update.message.reply_text(msg, parse_mode="Markdown")
+            await update.message.reply_text(msg, parse_mode="Markdown")
         else:
-            update.message.reply_text("❌ Error al contactar Numer IA.")
+            await update.message.reply_text("❌ Error al contactar Numer IA.")
 
     except Exception as e:
-        update.message.reply_text(f"Error: {e}")
+        await update.message.reply_text(f"Error: {e}")
 
 
-# --- Configurar handlers ---
-dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, analyze))
+# --- Construcción del Application (para webhook) ---
+application = ApplicationBuilder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, analyze))
 
 
-# --- Ruta webhook ---
+# --- Endpoint principal del webhook ---
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
+    application.update_queue.put_nowait(update)
     return "ok", 200
 
 
+# --- Verificación del servidor ---
 @app.route("/", methods=["GET"])
 def index():
     return "Numer IA Bot online ✅", 200
 
 
-# --- Main ---
+# --- Iniciar Flask ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
