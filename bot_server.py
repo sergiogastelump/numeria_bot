@@ -10,7 +10,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 # === Inicializar Flask ===
 app = Flask(__name__)
 
-# === Configurar la app de Telegram ===
+# === Crear aplicación de Telegram ===
 telegram_app = Application.builder().token(TOKEN).build()
 
 # === Comando /start ===
@@ -18,16 +18,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[LOG] Mensaje recibido de @{update.effective_user.username}")
     await update.message.reply_text(
         "🔮 ¡Hola! Soy *NumerIA*, tu guía mística digital.\n"
-        "Puedo interpretar tus códigos y vibraciones numéricas para revelar energías ocultas ✨",
+        "Interpreto códigos, energías y vibraciones numéricas para revelar patrones ocultos ✨",
         parse_mode="Markdown"
     )
 
-# === Respuesta por defecto ===
+# === Respuesta a cualquier texto ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     print(f"[LOG] Mensaje: {user_text} de @{update.effective_user.username}")
     await update.message.reply_text(
-        f"🌙 Has dicho: *{user_text}*\nDéjame sentir la vibración de tus palabras...",
+        f"🌙 Has dicho: *{user_text}*\nDéjame sentir la vibración detrás de tus palabras...",
         parse_mode="Markdown"
     )
 
@@ -35,26 +35,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# === Ruta principal ===
+# === Ruta base ===
 @app.route("/")
 def home():
     return "✅ NumerIA está online y lista para recibir mensajes."
 
-# === Webhook para Telegram ===
+# === Webhook de Telegram ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
 
-    # Crear o recuperar el loop de eventos correctamente
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(telegram_app.process_update(update))
-    loop.close()
+    # Ejecutar el procesamiento de forma asíncrona dentro del loop
+    async def process():
+        if not telegram_app.running:
+            await telegram_app.initialize()
+        await telegram_app.process_update(update)
+        await telegram_app.shutdown()
 
+    asyncio.run(process())
     return "OK", 200
 
-# === Ejecutar servidor ===
+# === Iniciar servidor ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     print(f"🚀 Iniciando NumerIA en puerto {port}...")
