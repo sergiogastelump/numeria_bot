@@ -1,62 +1,64 @@
 import os
 import asyncio
+import requests
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from dotenv import load_dotenv
 
-# === Variables de entorno ===
+load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+DATAMIND_URL = os.getenv("DATAMIND_URL")
 
-# === Inicializar Flask ===
 app = Flask(__name__)
-
-# === Crear aplicación de Telegram ===
 telegram_app = Application.builder().token(TOKEN).build()
 
-# === Comando /start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[LOG] Mensaje recibido de @{update.effective_user.username}")
     await update.message.reply_text(
-        "🔮 ¡Hola! Soy *NumerIA*, tu guía mística digital.\n"
-        "Interpreto códigos, energías y vibraciones numéricas para revelar patrones ocultos ✨",
+        "🔮 ¡Hola, soy *NumerIA*! ✨\n"
+        "Puedo interpretar códigos, nombres o eventos con un enfoque místico y analítico.\n\n"
+        "Escríbeme cualquier palabra, número o código y te daré su interpretación. 🧠",
         parse_mode="Markdown"
     )
 
-# === Respuesta a cualquier texto ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    print(f"[LOG] Mensaje: {user_text} de @{update.effective_user.username}")
-    await update.message.reply_text(
-        f"🌙 Has dicho: *{user_text}*\nDéjame sentir la vibración detrás de tus palabras...",
-        parse_mode="Markdown"
-    )
+    user_name = update.effective_user.first_name or "Usuario"
+    await update.message.reply_text("⏳ Analizando tu mensaje...")
+    try:
+        response = requests.post(
+            DATAMIND_URL,
+            json={"user": user_name, "text": user_text},
+            timeout=10
+        )
+        if response.status_code == 200:
+            data = response.json()
+            interpretation = data.get("interpretation", "No se encontró interpretación disponible.")
+            await update.message.reply_text(f"🔮 *Interpretación:*\n{interpretation}", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("⚠️ No pude obtener respuesta de mi mente analítica (DataMind). Inténtalo de nuevo más tarde.")
+    except Exception as e:
+        print(f"[ERROR] {e}")
+        await update.message.reply_text("🚫 Ocurrió un error al procesar tu mensaje. Inténtalo de nuevo.")
 
-# === Registrar handlers ===
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# === Ruta base ===
 @app.route("/")
 def home():
-    return "✅ NumerIA está online y lista para recibir mensajes."
+    return "✅ NumerIA Bot está online y escuchando."
 
-# === Webhook de Telegram ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
-
-    # Ejecutar el procesamiento de forma asíncrona dentro del loop
     async def process():
-        if not telegram_app.running:
-            await telegram_app.initialize()
+        await telegram_app.initialize()
         await telegram_app.process_update(update)
         await telegram_app.shutdown()
-
     asyncio.run(process())
     return "OK", 200
 
-# === Iniciar servidor ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     print(f"🚀 Iniciando NumerIA en puerto {port}...")
