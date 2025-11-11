@@ -1,8 +1,7 @@
-# --- Falso módulo imghdr (compatibilidad Python 3.13+) ---
 import mimetypes
 
 def what(file, h=None):
-    """Sustituye la función original imghdr.what eliminada en Python 3.13"""
+    """Compatibilidad para Python 3.13 (módulo imghdr eliminado)."""
     mime_type, _ = mimetypes.guess_type(file)
     if mime_type:
         return mime_type.split("/")[-1]

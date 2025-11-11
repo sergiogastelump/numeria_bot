@@ -41,4 +41,49 @@ async def analyze_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         payload = {"text": text}
-        response = req
+        response = requests.post(DATAMIND_URL, json=payload, timeout=20)
+
+        if response.status_code == 200:
+            data = response.json()
+            numerology = data.get("numerology", {})
+            gematria = data.get("gematria", {})
+            interp = data.get("interpretation", {}).get("summary", "Sin interpretación disponible.")
+
+            msg = (
+                f"🔢 *Análisis de:* {text}\n\n"
+                f"✨ *Numerología:* {numerology.get('by_name', {}).get('name_core', 'N/A')}\n"
+                f"🔠 *Gematría:* {gematria.get('gematria', 'N/A')}\n\n"
+                f"🧠 *Interpretación:* {interp}"
+            )
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await update.message.reply_text("❌ Error al procesar el análisis con el servidor DataMind.")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error interno: {e}")
+
+# === Webhook ===
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    """Recibe las actualizaciones desde Telegram vía webhook."""
+    update = Update.de_json(request.get_json(force=True), bot)
+    app_instance = ApplicationBuilder().token(TOKEN).build()
+
+    app_instance.add_handler(CommandHandler("start", start))
+    app_instance.add_handler(CommandHandler("help", help_command))
+    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, analyze_message))
+
+    app_instance.update_queue.put_nowait(update)
+    return "ok", 200
+
+@app.route("/", methods=["GET"])
+def index():
+    """Página base para confirmar el estado del bot."""
+    return {
+        "status": "Numer IA Bot activo ✅",
+        "info": "Webhook funcionando correctamente",
+        "service": "bot_server"
+    }, 200
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
