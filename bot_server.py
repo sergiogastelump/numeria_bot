@@ -1,7 +1,6 @@
 # ============================================================
-#  NumerIA Bot — Conexión Telegram ↔ DataMind IA Server
-#  Autor: Sergio Gastelum
-#  Versión: 2.0 estable (Render compatible)
+#  NumerIA Bot — Telegram ↔ DataMind IA
+#  Versión: 2.1 DEBUG Render estable
 # ============================================================
 
 import os
@@ -20,15 +19,21 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATAMIND_URL = os.getenv("DATAMIND_URL", "https://numeria-datamind.onrender.com/predict")
 
 # ------------------------------------------------------------
-# 2️⃣ Inicializar Flask y la aplicación de Telegram
+# 2️⃣ Inicializar Flask y app de Telegram
 # ------------------------------------------------------------
 app = Flask(__name__)
 telegram_app = Application.builder().token(TOKEN).build()
 
+# 🔧 Inicializar Telegram App al arranque
+loop = asyncio.get_event_loop()
+loop.run_until_complete(telegram_app.initialize())
+print("✅ Telegram App inicializada correctamente.")
+
 # ------------------------------------------------------------
-# 3️⃣ Comandos del bot
+# 3️⃣ Comandos y handlers
 # ------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"📩 /start recibido de {update.effective_user.first_name}")
     await update.message.reply_text(
         "🔮 ¡Hola, soy *NumerIA*! ✨\n"
         "Puedo interpretar códigos, nombres o eventos con un enfoque místico y analítico.\n\n"
@@ -39,6 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     user_name = update.effective_user.first_name or "Usuario"
+    print(f"💬 Mensaje recibido: {user_text} (de {user_name})")
     await update.message.reply_text("⏳ Analizando tu mensaje...")
 
     try:
@@ -49,16 +55,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         if response.status_code == 200:
             data = response.json()
-            # Acepta tanto "interpretation" como "prediction"
-            interpretation = data.get("interpretation", data.get("prediction", "No se encontró interpretación disponible."))
+            interpretation = data.get("interpretation", data.get("prediction", "No se encontró interpretación."))
             await update.message.reply_text(f"🔮 *Interpretación:*\n{interpretation}", parse_mode="Markdown")
+            print(f"✅ Respuesta enviada a {user_name}")
         else:
-            await update.message.reply_text("⚠️ No pude obtener respuesta de mi mente analítica (DataMind). Inténtalo de nuevo más tarde.")
+            await update.message.reply_text("⚠️ No pude obtener respuesta de DataMind.")
+            print(f"⚠️ Error {response.status_code} al contactar DataMind")
     except Exception as e:
         print(f"[ERROR handle_message] {e}")
-        await update.message.reply_text("🚫 Ocurrió un error al procesar tu mensaje. Inténtalo de nuevo.")
+        await update.message.reply_text("🚫 Error al procesar tu mensaje.")
 
-# Registrar handlers
+# Registrar comandos
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
@@ -71,27 +78,28 @@ def home():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """Recibe actualizaciones de Telegram y las procesa sin romper el event loop."""
+    """Procesa actualizaciones de Telegram sin cerrar event loop."""
     try:
         data = request.get_json(force=True)
-        update = Update.de_json(data, telegram_app.bot)
+        print("📨 Nueva actualización recibida desde Telegram:", data)
 
-        # Evitar 502 creando/cerrando loops en cada petición
+        update = Update.de_json(data, telegram_app.bot)
         loop = asyncio.get_event_loop()
         if loop.is_running():
             asyncio.ensure_future(telegram_app.process_update(update))
         else:
             loop.run_until_complete(telegram_app.process_update(update))
 
+        print("✅ Update procesado correctamente.")
         return "OK", 200
     except Exception as e:
         print(f"[ERROR webhook] {e}")
         return "ERROR", 500
 
 # ------------------------------------------------------------
-# 5️⃣ Ejecución local / Render
+# 5️⃣ Ejecutar en Render
 # ------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 Iniciando NumerIA en puerto {port}...")
+    print(f"🚀 Iniciando NumerIA Bot en puerto {port}...")
     app.run(host="0.0.0.0", port=port)
