@@ -1,5 +1,7 @@
 # ============================================================
-#  NumerIA Bot — Telegram ↔ DataMind IA (Render Stable v3.0)
+#  NumerIA Bot — Telegram ↔ DataMind IA
+#  Versión: 3.1 Render Stable (compatible con /TOKEN + /webhook)
+#  Autor: Sergio Gastelum
 # ============================================================
 
 import os
@@ -74,13 +76,18 @@ telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_
 def home():
     return "✅ NumerIA Bot está online y escuchando."
 
-# 🔹 Endpoint alternativo (webhook clásico)
+# 🔹 Endpoint /webhook (respaldo)
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
         data = request.get_json(force=True)
         print("📨 Nueva actualización (/webhook):", data)
-        update = Update.de_json(data, telegram_app.bot)
+
+        try:
+            update = Update.de_json(data, telegram_app.bot)
+        except Exception as e_json:
+            print(f"[ERROR parsing Update /webhook] {e_json}")
+            return "JSON inválido", 200
 
         loop = asyncio.get_event_loop()
         if loop.is_running():
@@ -91,16 +98,21 @@ def webhook():
         print("✅ Update procesado correctamente (/webhook).")
         return "OK", 200
     except Exception as e:
-        print(f"[ERROR webhook] {e}")
+        print(f"[ERROR webhook general] {e}")
         return "ERROR", 500
 
-# 🔹 Endpoint por TOKEN (el que ahora usa Telegram)
+# 🔹 Endpoint /TOKEN (actual, usado por Telegram)
 @app.route(f"/{TOKEN}", methods=["POST"])
 def token_webhook():
     try:
         data = request.get_json(force=True)
         print("📨 Nueva actualización (/TOKEN):", data)
-        update = Update.de_json(data, telegram_app.bot)
+
+        try:
+            update = Update.de_json(data, telegram_app.bot)
+        except Exception as e_json:
+            print(f"[ERROR parsing Update /TOKEN] {e_json}")
+            return "JSON inválido para Telegram", 200
 
         loop = asyncio.get_event_loop()
         if loop.is_running():
@@ -111,7 +123,7 @@ def token_webhook():
         print("✅ Update procesado correctamente (/TOKEN).")
         return "OK", 200
     except Exception as e:
-        print(f"[ERROR token_webhook] {e}")
+        print(f"[ERROR token_webhook general] {e}")
         return "ERROR", 500
 
 # ------------------------------------------------------------
