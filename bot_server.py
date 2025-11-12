@@ -1,6 +1,5 @@
 # ============================================================
-#  NumerIA Bot — Telegram ↔ DataMind IA
-#  Versión: 2.1 DEBUG Render estable
+#  NumerIA Bot — Telegram ↔ DataMind IA (Render Stable v3.0)
 # ============================================================
 
 import os
@@ -19,7 +18,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATAMIND_URL = os.getenv("DATAMIND_URL", "https://numeria-datamind.onrender.com/predict")
 
 # ------------------------------------------------------------
-# 2️⃣ Inicializar Flask y app de Telegram
+# 2️⃣ Inicializar Flask y App de Telegram
 # ------------------------------------------------------------
 app = Flask(__name__)
 telegram_app = Application.builder().token(TOKEN).build()
@@ -30,7 +29,7 @@ loop.run_until_complete(telegram_app.initialize())
 print("✅ Telegram App inicializada correctamente.")
 
 # ------------------------------------------------------------
-# 3️⃣ Comandos y handlers
+# 3️⃣ Handlers principales
 # ------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"📩 /start recibido de {update.effective_user.first_name}")
@@ -65,7 +64,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[ERROR handle_message] {e}")
         await update.message.reply_text("🚫 Error al procesar tu mensaje.")
 
-# Registrar comandos
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
@@ -76,24 +74,44 @@ telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_
 def home():
     return "✅ NumerIA Bot está online y escuchando."
 
+# 🔹 Endpoint alternativo (webhook clásico)
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """Procesa actualizaciones de Telegram sin cerrar event loop."""
     try:
         data = request.get_json(force=True)
-        print("📨 Nueva actualización recibida desde Telegram:", data)
-
+        print("📨 Nueva actualización (/webhook):", data)
         update = Update.de_json(data, telegram_app.bot)
+
         loop = asyncio.get_event_loop()
         if loop.is_running():
             asyncio.ensure_future(telegram_app.process_update(update))
         else:
             loop.run_until_complete(telegram_app.process_update(update))
 
-        print("✅ Update procesado correctamente.")
+        print("✅ Update procesado correctamente (/webhook).")
         return "OK", 200
     except Exception as e:
         print(f"[ERROR webhook] {e}")
+        return "ERROR", 500
+
+# 🔹 Endpoint por TOKEN (el que ahora usa Telegram)
+@app.route(f"/{TOKEN}", methods=["POST"])
+def token_webhook():
+    try:
+        data = request.get_json(force=True)
+        print("📨 Nueva actualización (/TOKEN):", data)
+        update = Update.de_json(data, telegram_app.bot)
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(telegram_app.process_update(update))
+        else:
+            loop.run_until_complete(telegram_app.process_update(update))
+
+        print("✅ Update procesado correctamente (/TOKEN).")
+        return "OK", 200
+    except Exception as e:
+        print(f"[ERROR token_webhook] {e}")
         return "ERROR", 500
 
 # ------------------------------------------------------------
