@@ -1,37 +1,39 @@
 # ============================================================
 #  NumerIA Bot — Telegram ↔ DataMind IA
-#  Versión: 3.1 Render Stable (compatible con /TOKEN + /webhook)
-#  Autor: Sergio Gastelum
+#  Versión: 3.2 Render FIX (Estable sin 500)
 # ============================================================
 
 import os
 import asyncio
+import threading
 import requests
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from dotenv import load_dotenv
 
 # ------------------------------------------------------------
-# 1️⃣ Cargar variables de entorno
+# 1️⃣ Configuración base
 # ------------------------------------------------------------
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATAMIND_URL = os.getenv("DATAMIND_URL", "https://numeria-datamind.onrender.com/predict")
 
-# ------------------------------------------------------------
-# 2️⃣ Inicializar Flask y App de Telegram
-# ------------------------------------------------------------
 app = Flask(__name__)
+
+# ------------------------------------------------------------
+# 2️⃣ Inicializar Telegram App
+# ------------------------------------------------------------
 telegram_app = Application.builder().token(TOKEN).build()
 
-# 🔧 Inicializar Telegram App al arranque
-loop = asyncio.get_event_loop()
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 loop.run_until_complete(telegram_app.initialize())
+
 print("✅ Telegram App inicializada correctamente.")
 
 # ------------------------------------------------------------
-# 3️⃣ Handlers principales
+# 3️⃣ Handlers
 # ------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"📩 /start recibido de {update.effective_user.first_name}")
@@ -70,64 +72,37 @@ telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # ------------------------------------------------------------
-# 4️⃣ Rutas Flask
+# 4️⃣ Procesamiento seguro del webhook
 # ------------------------------------------------------------
+def process_update_async(data):
+    """Procesa el update en un hilo separado para no bloquear Flask."""
+    try:
+        update = Update.de_json(data, telegram_app.bot)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(telegram_app.process_update(update))
+        loop.close()
+        print("✅ Update procesado correctamente.")
+    except Exception as e:
+        print(f"[ERROR process_update_async] {e}")
+
 @app.route("/")
 def home():
-    return "✅ NumerIA Bot está online y escuchando."
+    return jsonify({"status": "ok", "message": "NumerIA Bot activo 🔮"}), 200
 
-# 🔹 Endpoint /webhook (respaldo)
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    try:
-        data = request.get_json(force=True)
-        print("📨 Nueva actualización (/webhook):", data)
-
-        try:
-            update = Update.de_json(data, telegram_app.bot)
-        except Exception as e_json:
-            print(f"[ERROR parsing Update /webhook] {e_json}")
-            return "JSON inválido", 200
-
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(telegram_app.process_update(update))
-        else:
-            loop.run_until_complete(telegram_app.process_update(update))
-
-        print("✅ Update procesado correctamente (/webhook).")
-        return "OK", 200
-    except Exception as e:
-        print(f"[ERROR webhook general] {e}")
-        return "ERROR", 500
-
-# 🔹 Endpoint /TOKEN (actual, usado por Telegram)
 @app.route(f"/{TOKEN}", methods=["POST"])
-def token_webhook():
+def webhook_token():
     try:
         data = request.get_json(force=True)
         print("📨 Nueva actualización (/TOKEN):", data)
-
-        try:
-            update = Update.de_json(data, telegram_app.bot)
-        except Exception as e_json:
-            print(f"[ERROR parsing Update /TOKEN] {e_json}")
-            return "JSON inválido para Telegram", 200
-
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(telegram_app.process_update(update))
-        else:
-            loop.run_until_complete(telegram_app.process_update(update))
-
-        print("✅ Update procesado correctamente (/TOKEN).")
+        threading.Thread(target=process_update_async, args=(data,)).start()
         return "OK", 200
     except Exception as e:
-        print(f"[ERROR token_webhook general] {e}")
+        print(f"[ERROR webhook_token] {e}")
         return "ERROR", 500
 
 # ------------------------------------------------------------
-# 5️⃣ Ejecutar en Render
+# 5️⃣ Ejecutar servidor
 # ------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
