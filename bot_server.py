@@ -1,6 +1,7 @@
 # ============================================================
 #  NumerIA Bot — Telegram ↔ DataMind IA
-#  Versión: 3.2 Render FIX (Estable sin 500)
+#  Versión: 3.3 Render Async Stable
+#  Autor: Sergio Gastelum
 # ============================================================
 
 import os
@@ -72,20 +73,30 @@ telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # ------------------------------------------------------------
-# 4️⃣ Procesamiento seguro del webhook
+# 4️⃣ Procesamiento seguro del webhook (versión 3.3 estable)
 # ------------------------------------------------------------
 def process_update_async(data):
-    """Procesa el update en un hilo separado para no bloquear Flask."""
+    """Procesa el update en un hilo separado sin cerrar el loop prematuramente."""
     try:
         update = Update.de_json(data, telegram_app.bot)
+
+        async def handle():
+            try:
+                await telegram_app.process_update(update)
+                print("✅ Update procesado correctamente.")
+            except Exception as e_inner:
+                print(f"[ERROR interno handle()] {e_inner}")
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(telegram_app.process_update(update))
-        loop.close()
-        print("✅ Update procesado correctamente.")
+        loop.run_until_complete(handle())
+        # 🔧 No se cierra el loop manualmente para evitar RuntimeError
     except Exception as e:
         print(f"[ERROR process_update_async] {e}")
 
+# ------------------------------------------------------------
+# 5️⃣ Rutas principales Flask
+# ------------------------------------------------------------
 @app.route("/")
 def home():
     return jsonify({"status": "ok", "message": "NumerIA Bot activo 🔮"}), 200
@@ -102,7 +113,7 @@ def webhook_token():
         return "ERROR", 500
 
 # ------------------------------------------------------------
-# 5️⃣ Ejecutar servidor
+# 6️⃣ Ejecutar servidor
 # ------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
