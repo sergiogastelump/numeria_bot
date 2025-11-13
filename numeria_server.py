@@ -1,8 +1,8 @@
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
-import asyncio
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATAMIND_API_URL = os.getenv("DATAMIND_API_URL")
@@ -13,22 +13,21 @@ if not DATAMIND_API_URL:
 # Flask app
 app = Flask(__name__)
 
-# Telegram Application (async engine)
+# Telegram application (async)
 telegram_app = ApplicationBuilder().token(TOKEN).build()
 
-# Handler async
+# Async handler
 async def handle_message(update: Update, context):
     text = update.message.text
     await update.message.reply_text(f"🔮 NumerIA activo\nTu mensaje: {text}")
 
 telegram_app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-# Webhook endpoint (SYNC Flask, ASYNC Telegram)
+# Webhook route (SYNC Flask, ASYNC PTB 20)
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
-    # Ejecutamos async dentro de Flask síncrono
     asyncio.run(telegram_app.process_update(update))
     return "ok", 200
 
