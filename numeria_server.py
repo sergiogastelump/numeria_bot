@@ -1,45 +1,34 @@
 import os
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Dispatcher, MessageHandler, Filters
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
-# Cargar variables
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATAMIND_API_URL = os.getenv("DATAMIND_API_URL")
 
 if not DATAMIND_API_URL:
     raise RuntimeError("DATAMIND_API_URL no está configurada en las Environment Variables.")
 
-bot = Bot(token=TOKEN)
-
-# Crear servidor Flask
 app = Flask(__name__)
+telegram_app = ApplicationBuilder().token(TOKEN).build()
 
-# Crear Dispatcher
-dispatcher = Dispatcher(bot=bot, update_queue=None, use_context=True)
-
-# --- Handler principal del bot ---
-def handler(update, context):
-    chat_id = update.effective_chat.id
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    await update.message.reply_text(f"🔮 NumerIA activo\nTu mensaje: {text}")
 
-    bot.send_message(chat_id, f"🔮 NumerIA activo\nTu mensaje: {text}")
+telegram_app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-dispatcher.add_handler(MessageHandler(Filters.text, handler))
-
-# --- Webhook endpoint ---
 @app.route("/webhook", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
+async def webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
     return "ok", 200
 
-# --- Home page ---
 @app.route("/")
 def index():
-    return "NumerIA Bot funcionando 🔥", 200
+    return "NumerIA bot activo con PTB 20 + DataMind 🔥", 200
 
-# --- Ejecutar en Render ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
