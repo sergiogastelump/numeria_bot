@@ -1,7 +1,8 @@
 import os
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, MessageHandler, filters
+import asyncio
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATAMIND_API_URL = os.getenv("DATAMIND_API_URL")
@@ -9,25 +10,31 @@ DATAMIND_API_URL = os.getenv("DATAMIND_API_URL")
 if not DATAMIND_API_URL:
     raise RuntimeError("DATAMIND_API_URL no está configurada en las Environment Variables.")
 
+# Flask app
 app = Flask(__name__)
+
+# Telegram Application (async engine)
 telegram_app = ApplicationBuilder().token(TOKEN).build()
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Handler async
+async def handle_message(update: Update, context):
     text = update.message.text
     await update.message.reply_text(f"🔮 NumerIA activo\nTu mensaje: {text}")
 
 telegram_app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
+# Webhook endpoint (SYNC Flask, ASYNC Telegram)
 @app.route("/webhook", methods=["POST"])
-async def webhook():
+def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
+    # Ejecutamos async dentro de Flask síncrono
+    asyncio.run(telegram_app.process_update(update))
     return "ok", 200
 
 @app.route("/")
 def index():
-    return "NumerIA bot activo con PTB 20 + DataMind 🔥", 200
+    return "NumerIA bot activo con PTB 20 síncrono 🔥", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
