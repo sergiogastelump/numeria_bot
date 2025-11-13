@@ -1,121 +1,61 @@
-# ============================================================
-#  NumerIA Bot — Telegram ↔ DataMind IA
-#  Versión: 3.3 Render Async Stable
-#  Autor: Sergio Gastelum
-# ============================================================
-
-import os
+import logging
+import aiohttp
 import asyncio
-import threading
-import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from dotenv import load_dotenv
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
-# ------------------------------------------------------------
-# 1️⃣ Configuración base
-# ------------------------------------------------------------
-load_dotenv()
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-DATAMIND_URL = os.getenv("DATAMIND_URL", "https://numeria-datamind.onrender.com/predict")
+# --- Configuración base ---
+TOKEN = "8060973627:AAFbjXs3mk624axpH4vh0kP_Cbew52YQ3zw"  # 🔐 Token del bot NumerIA
+DATAMIND_API_URL = "https://numeria-datamind-eykx.onrender.com/predict"
 
 app = Flask(__name__)
 
-# ------------------------------------------------------------
-# 2️⃣ Inicializar Telegram App
-# ------------------------------------------------------------
-telegram_app = Application.builder().token(TOKEN).build()
+# --- Inicialización del bot de Telegram ---
+telegram_app = ApplicationBuilder().token(TOKEN).build()
+logging.basicConfig(level=logging.INFO)
 
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.run_until_complete(telegram_app.initialize())
-
-print("✅ Telegram App inicializada correctamente.")
-
-# ------------------------------------------------------------
-# 3️⃣ Handlers
-# ------------------------------------------------------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"📩 /start recibido de {update.effective_user.first_name}")
-    await update.message.reply_text(
-        "🔮 ¡Hola, soy *NumerIA*! ✨\n"
-        "Puedo interpretar códigos, nombres o eventos con un enfoque místico y analítico.\n\n"
-        "Escríbeme cualquier palabra, número o código y te daré su interpretación. 🧠",
-        parse_mode="Markdown"
-    )
-
+# --- Manejador de mensajes ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
-    user_name = update.effective_user.first_name or "Usuario"
-    print(f"💬 Mensaje recibido: {user_text} (de {user_name})")
-    await update.message.reply_text("⏳ Analizando tu mensaje...")
+    user_message = update.message.text
+    user_name = update.message.from_user.first_name
+    chat_id = update.message.chat_id
 
+    await update.message.reply_text("⏳ Analizando tu mensaje con DataMind...")
+
+    # --- Llamada a la API DataMind ---
     try:
-        response = requests.post(
-            DATAMIND_URL,
-            json={"user": user_name, "text": user_text},
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            interpretation = data.get("interpretation", data.get("prediction", "No se encontró interpretación."))
-            await update.message.reply_text(f"🔮 *Interpretación:*\n{interpretation}", parse_mode="Markdown")
-            print(f"✅ Respuesta enviada a {user_name}")
-        else:
-            await update.message.reply_text("⚠️ No pude obtener respuesta de DataMind.")
-            print(f"⚠️ Error {response.status_code} al contactar DataMind")
+        async with aiohttp.ClientSession() as session:
+            payload = {"user": user_name, "text": user_message}
+            async with session.post(DATAMIND_API_URL, json=payload) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    respuesta = result.get("interpretation", "No se obtuvo interpretación.")
+                    await context.bot.send_message(chat_id=chat_id, text=f"🧠 {respuesta}")
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text="⚠️ Error al contactar DataMind.")
     except Exception as e:
-        print(f"[ERROR handle_message] {e}")
-        await update.message.reply_text("🚫 Error al procesar tu mensaje.")
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ Error interno: {str(e)}")
 
-telegram_app.add_handler(CommandHandler("start", start))
+# --- Registrar el manejador ---
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# ------------------------------------------------------------
-# 4️⃣ Procesamiento seguro del webhook (versión 3.3 estable)
-# ------------------------------------------------------------
-def process_update_async(data):
-    """Procesa el update en un hilo separado sin cerrar el loop prematuramente."""
-    try:
-        update = Update.de_json(data, telegram_app.bot)
-
-        async def handle():
-            try:
-                await telegram_app.process_update(update)
-                print("✅ Update procesado correctamente.")
-            except Exception as e_inner:
-                print(f"[ERROR interno handle()] {e_inner}")
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(handle())
-        # 🔧 No se cierra el loop manualmente para evitar RuntimeError
-    except Exception as e:
-        print(f"[ERROR process_update_async] {e}")
-
-# ------------------------------------------------------------
-# 5️⃣ Rutas principales Flask
-# ------------------------------------------------------------
-@app.route("/")
-def home():
-    return jsonify({"status": "ok", "message": "NumerIA Bot activo 🔮"}), 200
-
+# --- Webhook principal ---
 @app.route(f"/{TOKEN}", methods=["POST"])
-def webhook_token():
+def webhook():
     try:
-        data = request.get_json(force=True)
-        print("📨 Nueva actualización (/TOKEN):", data)
-        threading.Thread(target=process_update_async, args=(data,)).start()
-        return "OK", 200
+        update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+        asyncio.run(telegram_app.process_update(update))
     except Exception as e:
-        print(f"[ERROR webhook_token] {e}")
-        return "ERROR", 500
+        print(f"❌ Error procesando update: {e}")
+    return "OK", 200
 
-# ------------------------------------------------------------
-# 6️⃣ Ejecutar servidor
-# ------------------------------------------------------------
+# --- Página principal ---
+@app.route("/", methods=["GET"])
+def home():
+    return "✅ Servidor NumerIA + DataMind activo y en línea", 200
+
+# --- Ejecución en Render ---
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 Iniciando NumerIA Bot en puerto {port}...")
-    app.run(host="0.0.0.0", port=port)
+    print("🚀 Servidor NumerIA Telegram activo y escuchando en puerto 10000")
+    app.run(host="0.0.0.0", port=10000)
