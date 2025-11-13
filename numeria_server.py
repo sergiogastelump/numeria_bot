@@ -10,10 +10,9 @@ DATAMIND_API_URL = os.getenv("DATAMIND_API_URL")
 if not DATAMIND_API_URL:
     raise RuntimeError("DATAMIND_API_URL no está configurada.")
 
-# Flask
 app = Flask(__name__)
 
-# Crear app de telegram (motor async)
+# Crear app de Telegram
 telegram_app = ApplicationBuilder().token(TOKEN).build()
 
 # Handler async
@@ -23,7 +22,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Inicializar PTB (una sola vez)
 initialized = False
 
 async def init_telegram():
@@ -33,15 +31,21 @@ async def init_telegram():
         await telegram_app.start()
         initialized = True
 
-# Webhook endpoint (SYNC Flask → ASYNC PTB)
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
 
-    # Ejecutar proceso async dentro del loop de PTB
-    loop = telegram_app.bot._async_loop
+    # Obtener loop REAL de PTB 20+
+    loop = telegram_app._application_loop
 
+    if loop is None:
+        # Crear uno si todavía no existe
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        telegram_app._application_loop = loop
+
+    # Ejecutar las tareas dentro del loop
     if not loop.is_running():
         loop.run_until_complete(init_telegram())
         loop.run_until_complete(telegram_app.process_update(update))
@@ -51,9 +55,10 @@ def webhook():
 
     return "ok", 200
 
+
 @app.route("/")
 def home():
-    return "NumerIA bot activo con PTB20 + Flask 🔥", 200
+    return "NumerIA bot activo con webhook Flask + PTB20 🔥", 200
 
 
 if __name__ == "__main__":
